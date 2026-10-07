@@ -1,0 +1,209 @@
+package com.smartitt.trip.service;
+
+import com.smartitt.container.entity.Container;
+import com.smartitt.container.entity.ContainerSize;
+import com.smartitt.container.entity.ContainerStatus;
+import com.smartitt.container.repository.ContainerRepository;
+import com.smartitt.trip.dto.CreateTripRequest;
+import com.smartitt.trip.dto.TripResponse;
+import com.smartitt.trip.entity.Trip;
+import com.smartitt.trip.entity.TripStatus;
+import com.smartitt.trip.repository.TripRepository;
+import com.smartitt.user.entity.User;
+import com.smartitt.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class TripService {
+
+    private final TripRepository tripRepository;
+    private final ContainerRepository containerRepository;
+    private final UserRepository userRepository;
+
+    @Transactional
+    public TripResponse createTrip(CreateTripRequest req) {
+        // Generate trip number
+        String tripNumber = generateTripNumber();
+
+        // Driver loads containers → confirms trip → waits for supervisor
+        Trip trip = Trip.builder()
+                .tripNumber(tripNumber)
+                .driverId(req.getDriverId() != null ? UUID.fromString(req.getDriverId()) : null)
+                .vehicleNumber(req.getVehicleNumber())
+                .vesselName(req.getVesselName())
+                .chassisNumber(req.getChassisNumber())
+                .sourceTerminal(req.getSourceTerminal())
+                .destTerminal(req.getDestTerminal())
+                .status(TripStatus.PENDING_APPROVAL)
+                .notes(req.getNotes())
+                .startTime(LocalDateTime.now())
+                .build();
+
+        trip = tripRepository.save(trip);
+
+        // Add containers as LOADED (confirmed, awaiting supervisor)
+        if (req.getContainers() != null) {
+            for (CreateTripRequest.ContainerInput ci : req.getContainers()) {
+                ContainerSize size;
+                try {
+                    // Accept "20FT", "40FT" from frontend
+                    size = ci.getSize().equals("20FT") ? ContainerSize.FT_20 : ContainerSize.FT_40;
+                } catch (Exception e) {
+                    size = ContainerSize.FT_40;
+                }
+
+                Container container = Container.builder()
+                        .containerNumber(ci.getContainerNumber().toUpperCase())
+                        .size(size)
+                        .trip(trip)
+                        .sourceTerminal(req.getSourceTerminal())
+                        .destTerminal(ci.getDestTerminal() != null ? ci.getDestTerminal() : req.getDestTerminal())
+                        .status(ContainerStatus.LOADED)
+                        .build();
+                containerRepository.save(container);
+                trip.getContainers().add(container);
+            }
+        }
+
+        trip = tripRepository.save(trip);
+        return mapToResponse(trip);
+    }
+
+    public List<TripResponse> getAllTrips(String driverId, String status) {
+        List<Trip> trips;
+
+        if (driverId != null && status != null) {
+            trips = tripRepository.findByDriverIdAndStatusOrderByCreatedAtDesc(
+                    UUID.fromString(driverId), TripStatus.valueOf(status));
+        } else if (driverId != null) {
+            trips = tripRepository.findByDriverIdOrderByCreatedAtDesc(UUID.fromString(driverId));
+        } else if (status != null) {
+            trips = tripRepository.findByStatusOrderByCreatedAtDesc(TripStatus.valueOf(status));
+        } else {
+            trips = tripRepository.findAllByOrderByCreatedAtDesc();
+        }
+
+        return trips.stream().map(this::mapToResponse).collect(Collectors.toList());
+    }
+
+    public TripResponse getTripById(String id) {
+        Trip trip = tripRepository.findById(UUID.fromString(id))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Trip not found"));
+        return mapToResponse(trip);
+    }
+
+    @Transactional
+    public TripResponse updateTripStatus(String id, String newStatus, String supervisorId, String reason) {
+        Trip trip = tripRepository.findById(UUID.fromString(id))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Trip not found"));
+
+        TripStatus status = TripStatus.valueOf(newStatus);
+
+        // Supervisor approve → trip becomes active so driver can transport/unload
+        if (status == TripStatus.APPROVED) {
+            trip.setStatus(TripStatus.IN_PROGRESS);
+            if (trip.getStartTime() == null) {
+                trip.setStartTime(LocalDateTime.now());
+            }
+            trip.getContainers().forEach(c -> {
+                if (c.getStatus() == ContainerStatus.LOADED) {
+                    c.setStatus(ContainerStatus.IN_TRANSIT);
+                    containerRepository.save(c);
+                }
+            });
+        } else {
+            trip.setStatus(status);
+        }
+
+        if (status == TripStatus.COMPLETED || status == TripStatus.REJECTED) {
+            trip.setEndTime(LocalDateTime.now());
+        }
+
+        return mapToResponse(tripRepository.save(trip));
+    }
+
+    @Transactional
+    public TripResponse unloadContainer(String tripId, String containerId, String unloadedAt) {
+        Trip trip = tripRepository.findById(UUID.fromString(tripId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Trip not found"));
+
+        if (trip.getStatus() != TripStatus.IN_PROGRESS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Trip must be approved (IN_PROGRESS) before unloading containers");
+        }
+
+        Container container = containerRepository.findById(UUID.fromString(containerId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Container not found"));
+
+        container.setStatus(ContainerStatus.DISCHARGED);
+        container.setUnloadedAt(unloadedAt);
+        containerRepository.save(container);
+
+        // Check if all containers are discharged
+        boolean allDischarged = trip.getContainers().stream()
+                .allMatch(c -> c.getStatus() == ContainerStatus.DISCHARGED);
+
+        if (allDischarged) {
+            trip.setStatus(TripStatus.COMPLETED);
+            trip.setEndTime(LocalDateTime.now());
+            tripRepository.save(trip);
+        }
+
+        trip = tripRepository.findById(trip.getId()).orElseThrow();
+        return mapToResponse(trip);
+    }
+
+    private String generateTripNumber() {
+        long count = tripRepository.count() + 1;
+        return String.format("ITT-%05d", count);
+    }
+
+    public TripResponse mapToResponse(Trip trip) {
+        List<TripResponse.ContainerResponse> containers = trip.getContainers().stream()
+                .map(c -> TripResponse.ContainerResponse.builder()
+                        .id(c.getId().toString())
+                        .containerNumber(c.getContainerNumber())
+                        .size(c.getSize() == ContainerSize.FT_20 ? "20FT" : "40FT")
+                        .sourceTerminal(c.getSourceTerminal())
+                        .destTerminal(c.getDestTerminal())
+                        .status(c.getStatus().name())
+                        .unloadedAt(c.getUnloadedAt())
+                        .build())
+                .collect(Collectors.toList());
+
+        String driverName = null;
+        if (trip.getDriverId() != null) {
+            driverName = userRepository.findById(trip.getDriverId())
+                    .map(User::getFullName)
+                    .orElse(null);
+        }
+
+        return TripResponse.builder()
+                .id(trip.getId().toString())
+                .tripNumber(trip.getTripNumber())
+                .driverId(trip.getDriverId() != null ? trip.getDriverId().toString() : null)
+                .driverName(driverName)
+                .vehicleNumber(trip.getVehicleNumber())
+                .vesselName(trip.getVesselName())
+                .chassisNumber(trip.getChassisNumber())
+                .sourceTerminal(trip.getSourceTerminal())
+                .destTerminal(trip.getDestTerminal())
+                .status(trip.getStatus().name())
+                .notes(trip.getNotes())
+                .startTime(trip.getStartTime())
+                .endTime(trip.getEndTime())
+                .createdAt(trip.getCreatedAt())
+                .containers(containers)
+                .build();
+    }
+}
