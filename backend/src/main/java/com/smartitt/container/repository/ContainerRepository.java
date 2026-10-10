@@ -14,5 +14,8 @@ public interface ContainerRepository extends JpaRepository<Container, UUID> {
     List<Container> findByTripId(UUID tripId);
     Optional<Container> findByContainerNumberAndTripId(String containerNumber, UUID tripId);
     boolean existsByContainerNumberAndTripId(String containerNumber, UUID tripId);
+    boolean existsByContainerNumber(String containerNumber);
+    Optional<Container> findFirstByContainerNumberOrderByCreatedAtDesc(String containerNumber);
+    List<Container> findByContainerNumber(String containerNumber);
     List<Container> findByStatus(ContainerStatus status);
 }
