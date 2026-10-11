@@ -68,11 +68,15 @@ public class User implements UserDetails {
     @Column(length = 30)
     private String emergencyContactNumber;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String profilePhoto;
+
+    @Column(columnDefinition = "TEXT")
+    private String coverImage;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
 
     private LocalDateTime updatedAt;
 

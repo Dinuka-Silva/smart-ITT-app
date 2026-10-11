@@ -115,10 +115,37 @@ public class DriverService {
                 .emergencyContactName(driver.getEmergencyContactName())
                 .emergencyContactNumber(driver.getEmergencyContactNumber())
                 .profilePhoto(driver.getProfilePhoto())
+                .coverImage(driver.getCoverImage())
                 .vehicleNumber(driver.getVehicleNumber())
+                .chassisNumber(driver.getChassisNumber())
+                .cheNumber(driver.getChassisNumber())
                 .status(driver.getStatus() != null ? driver.getStatus().name() : AccountStatus.ACTIVE.name())
                 .createdAt(driver.getCreatedAt())
                 .updatedAt(driver.getUpdatedAt())
                 .build();
     }
+
+    @Transactional
+    public DriverProfileResponse updateProfilePhotos(String idOrCode, String profilePhoto, String coverImage) {
+        Driver driver;
+        try {
+            UUID uuid = UUID.fromString(idOrCode);
+            driver = driverRepository.findById(uuid)
+                    .orElseGet(() -> driverRepository.findByDriverCode(idOrCode)
+                            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Driver not found: " + idOrCode)));
+        } catch (IllegalArgumentException e) {
+            driver = driverRepository.findByDriverCode(idOrCode)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Driver not found: " + idOrCode));
+        }
+
+        if (profilePhoto != null) {
+            driver.setProfilePhoto(profilePhoto);
+        }
+        if (coverImage != null) {
+            driver.setCoverImage(coverImage);
+        }
+        driverRepository.save(driver);
+        return mapToProfileResponse(driver);
+    }
 }
+

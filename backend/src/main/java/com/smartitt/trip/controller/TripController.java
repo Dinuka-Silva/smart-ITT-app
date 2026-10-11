@@ -79,6 +79,20 @@ public class TripController {
         return ResponseEntity.ok(tripService.unloadContainer(tripId, containerId, unloadedAt));
     }
 
+    @GetMapping("/driver/{driverId}")
+    @Operation(summary = "Get trips for a driver")
+    public ResponseEntity<List<TripResponse>> getTripsByDriver(@PathVariable String driverId) {
+        return ResponseEntity.ok(tripService.getAllTrips(driverId, null));
+    }
+
+    @PatchMapping("/{id}/complete")
+    @Operation(summary = "Complete trip with container discharge")
+    public ResponseEntity<TripResponse> completeTrip(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        return ResponseEntity.ok(tripService.updateTripStatus(id, "COMPLETED", null, null));
+    }
+
     @PatchMapping("/{id}/status")
     @Operation(summary = "Update trip status")
     public ResponseEntity<TripResponse> updateStatus(

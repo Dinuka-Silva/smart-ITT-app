@@ -30,4 +30,7 @@ public class Driver extends User {
     @Column(length = 50)
     private String vehicleNumber;
 
+    @Column(name = "chassis_number", length = 50)
+    private String chassisNumber; // SCK number / CHE number (e.g., "SCK 100")
 }
+

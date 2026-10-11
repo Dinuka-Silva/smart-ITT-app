@@ -30,15 +30,30 @@ public class TripService {
     private final ContainerRepository containerRepository;
     private final UserRepository userRepository;
 
+    private UUID resolveDriverUuid(String driverIdStr) {
+        if (driverIdStr == null || driverIdStr.isBlank() || "ALL".equalsIgnoreCase(driverIdStr)) {
+            return null;
+        }
+        try {
+            return UUID.fromString(driverIdStr);
+        } catch (IllegalArgumentException e) {
+            return userRepository.findByIdentifier(driverIdStr)
+                    .map(User::getId)
+                    .orElse(null);
+        }
+    }
+
     @Transactional
     public TripResponse createTrip(CreateTripRequest req) {
         // Generate trip number
         String tripNumber = generateTripNumber();
 
+        UUID driverUuid = resolveDriverUuid(req.getDriverId());
+
         // Driver loads containers → confirms trip → waits for supervisor
         Trip trip = Trip.builder()
                 .tripNumber(tripNumber)
-                .driverId(req.getDriverId() != null ? UUID.fromString(req.getDriverId()) : null)
+                .driverId(driverUuid)
                 .vehicleNumber(req.getVehicleNumber())
                 .vesselName(req.getVesselName())
                 .chassisNumber(req.getChassisNumber())
@@ -57,7 +72,7 @@ public class TripService {
                 ContainerSize size;
                 try {
                     // Accept "20FT", "40FT" from frontend
-                    size = ci.getSize().equals("20FT") ? ContainerSize.FT_20 : ContainerSize.FT_40;
+                    size = "20FT".equalsIgnoreCase(ci.getSize()) ? ContainerSize.FT_20 : ContainerSize.FT_40;
                 } catch (Exception e) {
                     size = ContainerSize.FT_40;
                 }
@@ -81,12 +96,13 @@ public class TripService {
 
     public List<TripResponse> getAllTrips(String driverId, String status) {
         List<Trip> trips;
+        UUID driverUuid = resolveDriverUuid(driverId);
 
-        if (driverId != null && status != null) {
+        if (driverUuid != null && status != null) {
             trips = tripRepository.findByDriverIdAndStatusOrderByCreatedAtDesc(
-                    UUID.fromString(driverId), TripStatus.valueOf(status));
-        } else if (driverId != null) {
-            trips = tripRepository.findByDriverIdOrderByCreatedAtDesc(UUID.fromString(driverId));
+                    driverUuid, TripStatus.valueOf(status));
+        } else if (driverUuid != null) {
+            trips = tripRepository.findByDriverIdOrderByCreatedAtDesc(driverUuid);
         } else if (status != null) {
             trips = tripRepository.findByStatusOrderByCreatedAtDesc(TripStatus.valueOf(status));
         } else {
@@ -109,23 +125,32 @@ public class TripService {
 
         TripStatus status = TripStatus.valueOf(newStatus);
 
-        // Supervisor approve → trip becomes active so driver can transport/unload
         if (status == TripStatus.APPROVED) {
+            trip.setStatus(TripStatus.APPROVED);
+        } else if (status == TripStatus.IN_PROGRESS) {
             trip.setStatus(TripStatus.IN_PROGRESS);
             if (trip.getStartTime() == null) {
                 trip.setStartTime(LocalDateTime.now());
             }
             trip.getContainers().forEach(c -> {
-                if (c.getStatus() == ContainerStatus.LOADED) {
-                    c.setStatus(ContainerStatus.IN_TRANSIT);
-                    containerRepository.save(c);
+                c.setStatus(ContainerStatus.IN_TRANSIT);
+                containerRepository.save(c);
+            });
+        } else if (status == TripStatus.COMPLETED) {
+            trip.setStatus(TripStatus.COMPLETED);
+            trip.setEndTime(LocalDateTime.now());
+            trip.getContainers().forEach(c -> {
+                c.setStatus(ContainerStatus.DISCHARGED);
+                if (c.getUnloadedAt() == null) {
+                    c.setUnloadedAt(LocalDateTime.now().toString());
                 }
+                containerRepository.save(c);
             });
         } else {
             trip.setStatus(status);
         }
 
-        if (status == TripStatus.COMPLETED || status == TripStatus.REJECTED) {
+        if (status == TripStatus.REJECTED) {
             trip.setEndTime(LocalDateTime.now());
         }
 

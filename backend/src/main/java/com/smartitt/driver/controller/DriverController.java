@@ -45,4 +45,15 @@ public class DriverController {
         String status = body.get("status");
         return ResponseEntity.ok(driverService.updateDriverStatus(id, status));
     }
+
+    @PatchMapping({"/api/v1/drivers/{id}/photos", "/api/drivers/{id}/photos"})
+    @Operation(summary = "Update driver profile photo and background cover image")
+    public ResponseEntity<DriverProfileResponse> updateDriverPhotos(
+            @PathVariable String id,
+            @RequestBody Map<String, String> body) {
+        String profilePhoto = body.get("profilePhoto");
+        String coverImage = body.get("coverImage");
+        return ResponseEntity.ok(driverService.updateProfilePhotos(id, profilePhoto, coverImage));
+    }
 }
+

@@ -16,6 +16,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.smartitt.vehicle.entity.Vehicle;
+import com.smartitt.vehicle.repository.VehicleRepository;
+
 import java.time.LocalDate;
 import java.util.List;
 
@@ -28,12 +31,14 @@ public class DataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final DriverRepository driverRepository;
     private final SupervisorRepository supervisorRepository;
+    private final VehicleRepository vehicleRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
     public void run(String... args) {
         seedTerminals();
+        seedVehicles();
         seedDemoUsers();
     }
 
@@ -52,6 +57,53 @@ public class DataInitializer implements CommandLineRunner {
             log.info("Successfully seeded 6 terminals.");
         }
     }
+
+    private void seedVehicles() {
+        if (vehicleRepository.count() == 0) {
+            log.info("Seeding SCK ITT Vehicle Fleet (19 vehicles across SCK, SDR LINK, E3 Logistics)...");
+            List<Vehicle> fleet = List.of(
+                // SCK Logistics Main Fleet (10 vehicles)
+                Vehicle.builder().chassisNumber("SCK 100").vehicleNumber("LY 5234").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 101").vehicleNumber("LY 5235").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 102").vehicleNumber("LY 5236").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 103").vehicleNumber("LY 5237").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 104").vehicleNumber("LY 5238").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 105").vehicleNumber("LY 5665").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 106").vehicleNumber("LY 5708").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 107").vehicleNumber("LY 5711").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 108").vehicleNumber("LY 5717").operator("SCK Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 109").vehicleNumber("LY 5721").operator("SCK Logistics").status("ACTIVE").build(),
+
+                // SDR LINK Fleet (6 vehicles)
+                Vehicle.builder().chassisNumber("SCK 115").vehicleNumber("LY 6528").operator("SDR LINK").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 117").vehicleNumber("LY 6529").operator("SDR LINK").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 122").vehicleNumber("LY 5596").operator("SDR LINK").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 119").vehicleNumber("LY 6530").operator("SDR LINK").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 120").vehicleNumber("LY 6531").operator("SDR LINK").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 121").vehicleNumber("LY 6532").operator("SDR LINK").status("ACTIVE").build(),
+
+                // E3 Logistics Fleet (3 vehicles)
+                Vehicle.builder().chassisNumber("SCK 123").vehicleNumber("LY 5597").operator("E3 Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 124").vehicleNumber("LY 5598").operator("E3 Logistics").status("ACTIVE").build(),
+                Vehicle.builder().chassisNumber("SCK 125").vehicleNumber("LY 5600").operator("E3 Logistics").status("ACTIVE").build()
+            );
+            vehicleRepository.saveAll(fleet);
+            log.info("Successfully seeded 19 fleet vehicles into database.");
+        } else {
+            // Update existing vehicles with revised operators
+            List<Vehicle> existing = vehicleRepository.findAll();
+            for (Vehicle v : existing) {
+                if ("LY 6530".equals(v.getVehicleNumber()) || "LY 6531".equals(v.getVehicleNumber()) || "LY 6532".equals(v.getVehicleNumber())) {
+                    v.setOperator("SDR LINK");
+                } else if ("LY 5597".equals(v.getVehicleNumber()) || "LY 5598".equals(v.getVehicleNumber()) || "LY 5600".equals(v.getVehicleNumber())) {
+                    v.setOperator("E3 Logistics");
+                }
+            }
+            vehicleRepository.saveAll(existing);
+            log.info("Successfully synchronized 19 fleet vehicle operators.");
+        }
+    }
+
 
     private void seedDemoUsers() {
         if (!userRepository.existsByEmail("supervisor@smartitt.lk")) {
@@ -95,9 +147,11 @@ public class DataInitializer implements CommandLineRunner {
             driver.setPassword(passwordEncoder.encode("driver"));
             driver.setRole(Role.DRIVER);
             driver.setStatus(AccountStatus.ACTIVE);
-            driver.setVehicleNumber("WP-BA-1234");
+            driver.setVehicleNumber("LY 5234");
+            driver.setChassisNumber("SCK 100");
             driverRepository.save(driver);
-            log.info("Demo driver created: Driver Code: DRV-00001, Email: driver@smartitt.lk, Password: driver");
+            log.info("Demo driver created: Driver Code: DRV-00001, Vehicle: LY 5234, CHE: SCK 100, Email: driver@smartitt.lk, Password: driver");
         }
     }
 }
+

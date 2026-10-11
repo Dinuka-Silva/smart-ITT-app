@@ -34,7 +34,11 @@ public class DriverProfileResponse {
     private String emergencyContactName;
     private String emergencyContactNumber;
     private String profilePhoto;
+    private String coverImage;
     private String vehicleNumber;
+
+    private String chassisNumber; // SCK number (CHE No)
+    private String cheNumber;     // Alias for chassisNumber
     private String status;
 
     private LocalDateTime createdAt;
